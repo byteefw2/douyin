@@ -1,0 +1,36 @@
+name: Build Theos Package
+
+on:
+  push:
+    branches:
+      - main  # 你可以改成自己的分支
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git curl wget perl clang make dpkg ldid
+
+      - name: Install Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          echo 'export THEOS=$HOME/theos' >> $HOME/.bashrc
+          echo 'export PATH=$THEOS/bin:$PATH' >> $HOME/.bashrc
+          source $HOME/.bashrc
+
+      - name: Build the package
+        run: |
+          make package
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v3
+        with:
+          name: tweak-package
+          path: ./packages/*.deb
