@@ -1633,45 +1633,68 @@ static void DYYYAddCustomViewToParent(UIView *parentView, float transparency) {
 
 %hook AWEPlayInteractionTimestampElement
 - (id)timestampLabel {
-	UILabel *label = %orig;
-	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYisEnableArea"]) {
-		NSString *text = label.text;
-		NSString *cityCode = self.model.cityCode;
+    UILabel *label = %orig;
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYisEnableArea"]) {
+        NSString *text = label.text;
+        NSString *cityCode = self.model.cityCode;
+        NSString *districtCode = self.model.districtCode;
+        NSString *streetCode = self.model.streetCode;
 
-		if (cityCode.length > 0) {
-			NSString *cityName = [CityManager.sharedInstance getCityNameWithCode:cityCode] ?: @"";
-			NSString *provinceName = [CityManager.sharedInstance getProvinceNameWithCode:cityCode] ?: @"";
+        if (cityCode.length > 0) {
+            NSString *cityName = [CityManager.sharedInstance getCityNameWithCode:cityCode] ?: @"";
+            
+            // 获取省份
+            NSString *provinceCode = [self getProvinceCodeByCityCode:cityCode];
+            NSString *provinceName = [CityManager.sharedInstance getProvinceNameWithCode:provinceCode] ?: @"";
 
-			if (cityName.length > 0 && ![text containsString:cityName]) {
-				if (!self.model.ipAttribution) {
-					BOOL isDirectCity = [provinceName isEqualToString:cityName] ||
-							    ([cityCode hasPrefix:@"11"] || [cityCode hasPrefix:@"12"] || [cityCode hasPrefix:@"31"] || [cityCode hasPrefix:@"50"]);
+            // 区
+            NSString *districtName = @"";
+            if (districtCode.length > 0) {
+                districtName = [CityManager.sharedInstance getDistrictNameWithCode:districtCode] ?: @"";
+            }
 
-					if (isDirectCity) {
-						label.text = [NSString stringWithFormat:@"%@  IP属地：%@", text, cityName];
-					} else {
-						label.text = [NSString stringWithFormat:@"%@  IP属地：%@ %@", text, provinceName, cityName];
-					}
-				} else {
-					BOOL isDirectCity = [provinceName isEqualToString:cityName] ||
-							    ([cityCode hasPrefix:@"11"] || [cityCode hasPrefix:@"12"] || [cityCode hasPrefix:@"31"] || [cityCode hasPrefix:@"50"]);
+            // 街道
+            NSString *streetName = @"";
+            if (streetCode.length > 0) {
+                NSArray *streets = [CityManager.sharedInstance getStreetsInDistrict:districtCode];
+                for (NSDictionary *street in streets) {
+                    if ([street[@"code"] isEqualToString:streetCode]) {
+                        streetName = street[@"name"] ?: @"";
+                        break;
+                    }
+                }
+            }
 
-					BOOL containsProvince = [text containsString:provinceName];
-					if (containsProvince && !isDirectCity) {
-						label.text = [NSString stringWithFormat:@"%@ %@", text, cityName];
-					} else if (containsProvince && isDirectCity) {
-						label.text = [NSString stringWithFormat:@"%@  IP属地：%@", text, cityName];
-					} else if (isDirectCity && containsProvince) {
-						label.text = text;
-					} else if (containsProvince) {
-						label.text = [NSString stringWithFormat:@"%@ %@", text, cityName];
-					} else {
-						label.text = text;
-					}
-				}
-			}
-		}
-	}
+            // 是否直辖市（北京、天津、上海、重庆）
+            BOOL isDirectCity = [provinceName isEqualToString:cityName] ||
+                                ([cityCode hasPrefix:@"11"] || [cityCode hasPrefix:@"12"] || [cityCode hasPrefix:@"31"] || [cityCode hasPrefix:@"50"]);
+
+            // 最终地址组合
+            NSMutableArray *addressParts = [NSMutableArray array];
+            if (provinceName.length > 0) [addressParts addObject:provinceName];
+            if (cityName.length > 0 && ![addressParts containsObject:cityName]) [addressParts addObject:cityName];
+            if (districtName.length > 0) [addressParts addObject:districtName];
+            if (streetName.length > 0) [addressParts addObject:streetName];
+            NSString *finalAddress = [addressParts componentsJoinedByString:@" "];
+
+            // 如果 text 中已包含 cityName 或省名等信息，就不重复添加
+            if (finalAddress.length > 0 && ![text containsString:cityName]) {
+                if (!self.model.ipAttribution) {
+                    label.text = [NSString stringWithFormat:@"%@  IP属地：%@", text, finalAddress];
+                } else {
+                    BOOL containsProvince = [text containsString:provinceName];
+                    if (containsProvince && !isDirectCity) {
+                        label.text = [NSString stringWithFormat:@"%@ %@", text, finalAddress];
+                    } else if (containsProvince && isDirectCity) {
+                        label.text = [NSString stringWithFormat:@"%@  IP属地：%@", text, finalAddress];
+                    } else {
+                        label.text = text;
+                    }
+                }
+            }
+        }
+    }
+
 	// 应用IP属地标签上移
 	NSString *ipScaleValue = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYNicknameScale"];
 	if (ipScaleValue.length > 0) {
